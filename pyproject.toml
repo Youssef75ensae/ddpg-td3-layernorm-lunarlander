@@ -1,0 +1,28 @@
+[project]
+name = "tp-student-env"
+version = "0.1.0"
+requires-python = ">=3.11, <3.13"
+dependencies = [
+    "gymnasium",
+    "ipywidgets",
+    "jupyter",
+    "jupyterlab",
+    "matplotlib",
+    "mazemdp",
+    "numpy",
+    "omegaconf",
+    "optuna",
+    "pyyaml",
+    "rl-mind",
+    "scipy",
+    "torch",
+    "tqdm",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+]
