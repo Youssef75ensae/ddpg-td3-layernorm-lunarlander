@@ -18,3 +18,17 @@ class GaussianNoise(Actor[Action]):
 
     def act(self, obs: Tensor) -> Tensor:
         return self.actor.act(obs)
+
+class CPUWrapper(Actor[Action]):
+    """Wraps an actor so that its outputs are moved to CPU (for env.step)."""
+
+    def __init__(self, actor: Actor[Action]):
+        super().__init__()
+        self.actor = actor
+
+    def forward(self, obs: Tensor) -> Action:
+        action = self.actor(obs).value
+        return Action(value=action.cpu())
+
+    def act(self, obs: Tensor) -> Tensor:
+        return self.actor.act(obs).cpu()

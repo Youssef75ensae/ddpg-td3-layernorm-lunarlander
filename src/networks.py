@@ -61,8 +61,14 @@ class ContinuousDeterministicActor(Actor[Action]):
             output_activation=nn.Tanh(),
         )
 
+    @property
+    def device(self):
+        return next(self.model.parameters()).device
+
     def forward(self, obs: Tensor) -> Action:
+        obs = obs.to(self.device)
         return Action(value=self.model(obs))
 
     def act(self, obs: Tensor) -> Tensor:
+        obs = obs.to(self.device)
         return self.model(obs)

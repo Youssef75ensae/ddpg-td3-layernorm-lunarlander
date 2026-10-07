@@ -15,7 +15,7 @@ from rl_mind.notebook import run_directory
 
 from src.config import DDPGConfig, TD3Config
 from src.networks import ContinuousQNetwork, ContinuousDeterministicActor
-from src.exploration import GaussianNoise
+from src.exploration import GaussianNoise, CPUWrapper
 from src.bias import measure_bias
 
 
@@ -47,7 +47,7 @@ def run_ddpg(cfg: DDPGConfig, run_name: str) -> Evaluator:
     actor_opt = torch.optim.Adam(actor.parameters(), lr=cfg.lr_actor)
     critic_opt = torch.optim.Adam(critic.parameters(), lr=cfg.lr_critic)
 
-    collector = TransitionCollector(env, GaussianNoise(actor, cfg.action_noise))
+    collector = TransitionCollector(env, CPUWrapper(GaussianNoise(actor, cfg.action_noise)))
     buffer = ReplayBuffer(cfg.buffer_size)
 
     run_dir = run_directory(run_name)
@@ -140,7 +140,7 @@ def run_td3(cfg: TD3Config, run_name: str) -> Evaluator:
     critic_1_opt = torch.optim.Adam(critic_1.parameters(), lr=cfg.lr_critic)
     critic_2_opt = torch.optim.Adam(critic_2.parameters(), lr=cfg.lr_critic)
 
-    collector = TransitionCollector(env, GaussianNoise(actor, cfg.action_noise))
+    collector = TransitionCollector(env, CPUWrapper(GaussianNoise(actor, cfg.action_noise)))
     buffer = ReplayBuffer(cfg.buffer_size)
 
     run_dir = run_directory(run_name)
