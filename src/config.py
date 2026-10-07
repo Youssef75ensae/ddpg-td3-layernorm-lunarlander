@@ -5,7 +5,7 @@ class DDPGConfig:
     env_name: str = "LunarLanderContinuous-v3"
     seed: int = 0
 
-    max_steps: int = 300_000
+    max_steps: int = 350_000
     n_envs: int = 1
     steps_per_update: int = 1
     learning_starts: int = 5_000
@@ -14,7 +14,7 @@ class DDPGConfig:
     batch_size: int = 64
 
     gamma: float = 0.98
-    tau: float = 0.005
+    tau: float = 0.05
     action_noise: float = 0.1
 
     actor_hidden: tuple[int, ...] = (64, 64)
