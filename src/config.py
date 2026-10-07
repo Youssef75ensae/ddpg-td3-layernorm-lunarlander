@@ -14,7 +14,7 @@ class DDPGConfig:
     batch_size: int = 64
 
     gamma: float = 0.98
-    tau: float = 0.05
+    tau: float = 0.005
     action_noise: float = 0.1
 
     actor_hidden: tuple[int, ...] = (64, 64)
