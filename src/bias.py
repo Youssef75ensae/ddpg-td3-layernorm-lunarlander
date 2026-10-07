@@ -1,60 +1,38 @@
-import gymnasium as gym
-import numpy as np
-import torch
+def measure_bias(actor, critic, env_name, seed, n_episodes=10, gamma=0.98):
+    """Estimate overestimation bias using actual trajectories.
 
-
-# Select device: CUDA if available, otherwise CPU.
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def measure_bias(actor, critic, env_name, seed, n_states=100, n_trajectories=50, horizon=500, gamma=0.98):
-    """Estimate overestimation bias by comparing Q-values to Monte Carlo returns."""
+    Runs n_episodes with the deterministic policy. At each step t, records
+    Q(s_t, a_t) and computes the Monte Carlo return G_t from t onwards.
+    Bias = mean(Q) - mean(G).
+    """
     env = gym.make(env_name)
-    env.reset(seed=seed)
-
-    # 1. Collect n_states states visited by the current policy
-    states = []
-    obs, _ = env.reset()
-    for _ in range(n_states):
-        states.append(obs.copy())
-        with torch.no_grad():
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
-            action = actor.act(obs_tensor).squeeze(0).cpu().numpy()
-        obs, _, terminated, truncated, _ = env.step(action)
-        if terminated or truncated:
-            obs, _ = env.reset()
-
-    # 2. For each state, compute Q-value and MC return
     q_values = []
     mc_returns = []
-    for s in states:
-        with torch.no_grad():
-            s_tensor = torch.tensor(s, dtype=torch.float32).unsqueeze(0).to(device)
-            a = actor.act(s_tensor).squeeze(0)
-            q = critic(s_tensor, a.unsqueeze(0)).item()
-        q_values.append(q)
 
-        returns = []
-        for _ in range(n_trajectories):
-            env.reset()
-            env.unwrapped.state = s
-            total = 0.0
-            disc = 1.0
-            obs = s
-            for _ in range(horizon):
-                with torch.no_grad():
-                    obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
-                    act = actor.act(obs_tensor).squeeze(0).cpu().numpy()
-                obs, r, terminated, truncated, _ = env.step(act)
-                total += disc * r
-                disc *= gamma
-                if terminated or truncated:
-                    break
-            returns.append(total)
-        mc_returns.append(np.mean(returns))
+    for ep in range(n_episodes):
+        obs, _ = env.reset(seed=seed + ep)
+        trajectory = []
+        terminated, truncated = False, False
+        steps = 0
+        while not (terminated or truncated) and steps < 1000:
+            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
+            with torch.no_grad():
+                a_tensor = actor.act(obs_tensor).squeeze(0)
+                q = critic(obs_tensor, a_tensor.unsqueeze(0)).item()
+            a_np = a_tensor.cpu().numpy()
+            next_obs, r, terminated, truncated, _ = env.step(a_np)
+            trajectory.append((q, r))
+            obs = next_obs
+            steps += 1
 
-    q_mean = np.mean(q_values)
-    mc_mean = np.mean(mc_returns)
-    bias = q_mean - mc_mean
+        # Compute discounted returns backward
+        G = 0.0
+        for q, r in reversed(trajectory):
+            G = r + gamma * G
+            q_values.append(q)
+            mc_returns.append(G)
+
     env.close()
-    return {"q_mean": float(q_mean), "mc_mean": float(mc_mean), "bias": float(bias)}
+    q_mean = float(np.mean(q_values))
+    mc_mean = float(np.mean(mc_returns))
+    return {"q_mean": q_mean, "mc_mean": mc_mean, "bias": q_mean - mc_mean}
