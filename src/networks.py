@@ -69,6 +69,7 @@ class ContinuousDeterministicActor(Actor[Action]):
         obs = obs.to(self.device)
         return Action(value=self.model(obs))
 
+    @torch.no_grad()
     def act(self, obs: Tensor) -> Tensor:
         obs = obs.to(self.device)
         return self.model(obs)

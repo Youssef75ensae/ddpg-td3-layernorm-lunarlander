@@ -1,6 +1,5 @@
 import copy
-import numpy as np
-import gymnasium as gym
+
 import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
@@ -22,14 +21,16 @@ from src.bias import measure_bias
 # Select device: CUDA if available, otherwise CPU.
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-def compute_critic_loss(gamma, batch, q_values, next_q_values):
-    target = batch.reward + gamma * (~batch.terminated) * next_q_values
-    return F.mse_loss(q_values, target)
+BIAS_INTERVAL = 25_000
 
 
 def compute_actor_loss(q_values):
     return -q_values.mean()
+
+
+def log_bias(evaluator, metrics, step):
+    for key in ("bias", "bias_valid", "bias_norm", "q_mean", "mc_mean", "frac_truncated"):
+        evaluator.writer.add_scalar(f"bias/{key}", metrics[key], step)
 
 
 def run_ddpg(cfg: DDPGConfig, run_name: str) -> Evaluator:
@@ -58,6 +59,7 @@ def run_ddpg(cfg: DDPGConfig, run_name: str) -> Evaluator:
         writer=SummaryWriter(run_dir),
     )
     bias_history = []
+    next_bias_step = BIAS_INTERVAL
 
     pbar = tqdm(total=cfg.max_steps)
     while collector.steps < cfg.max_steps:
@@ -98,16 +100,15 @@ def run_ddpg(cfg: DDPGConfig, run_name: str) -> Evaluator:
         evaluator.writer.add_scalar("loss/critic", critic_loss.item(), collector.steps)
         evaluator.writer.add_scalar("loss/actor", actor_loss.item(), collector.steps)
 
-        # Periodic bias measurement
-        if collector.steps % 25_000 == 0 and collector.steps > 0:
+        # Periodic bias measurement (steps can stall on resets, hence a threshold)
+        if collector.steps >= next_bias_step:
             metrics = measure_bias(
                 actor, critic, cfg.env_name, cfg.seed, gamma=cfg.gamma
             )
             bias_history.append({"step": collector.steps, **metrics})
-            evaluator.writer.add_scalar("bias/value", metrics["bias"], collector.steps)
-            evaluator.writer.add_scalar("bias/q_mean", metrics["q_mean"], collector.steps)
-            evaluator.writer.add_scalar("bias/mc_mean", metrics["mc_mean"], collector.steps)
-            pbar.set_postfix(bias=f"{metrics['bias']:.1f}")
+            log_bias(evaluator, metrics, collector.steps)
+            pbar.set_postfix(bias=f"{metrics['bias_valid']:.1f}")
+            next_bias_step = (collector.steps // BIAS_INTERVAL + 1) * BIAS_INTERVAL
 
         if result := evaluator.run_if_needed(collector.steps, actor):
             pbar.set_description(
@@ -115,6 +116,7 @@ def run_ddpg(cfg: DDPGConfig, run_name: str) -> Evaluator:
             )
 
     pbar.close()
+    evaluator.writer.flush()
     evaluator.bias_history = bias_history
     return evaluator
 
@@ -151,6 +153,7 @@ def run_td3(cfg: TD3Config, run_name: str) -> Evaluator:
         writer=SummaryWriter(run_dir),
     )
     bias_history = []
+    next_bias_step = BIAS_INTERVAL
 
     updates = 0
     pbar = tqdm(total=cfg.max_steps)
@@ -195,10 +198,13 @@ def run_td3(cfg: TD3Config, run_name: str) -> Evaluator:
         critic_2_loss.backward()
         critic_2_opt.step()
 
+        evaluator.writer.add_scalar("loss/critic_1", critic_1_loss.item(), collector.steps)
+        evaluator.writer.add_scalar("loss/critic_2", critic_2_loss.item(), collector.steps)
+
         updates += 1
 
         if updates % cfg.policy_delay == 0:
-            actor_loss = -critic_1(obs, actor(obs).value).mean()
+            actor_loss = compute_actor_loss(critic_1(obs, actor(obs).value))
             actor_opt.zero_grad()
             actor_loss.backward()
             actor_opt.step()
@@ -207,18 +213,17 @@ def run_td3(cfg: TD3Config, run_name: str) -> Evaluator:
             soft_update(critic_1, target_critic_1, cfg.tau)
             soft_update(critic_2, target_critic_2, cfg.tau)
 
-        evaluator.writer.add_scalar("loss/critic", critic_1_loss.item(), collector.steps)
+            evaluator.writer.add_scalar("loss/actor", actor_loss.item(), collector.steps)
 
-        # Periodic bias measurement (using critic_1, per the TD3 convention)
-        if collector.steps % 25_000 == 0 and collector.steps > 0:
+        # Periodic bias measurement (critic_1)
+        if collector.steps >= next_bias_step:
             metrics = measure_bias(
                 actor, critic_1, cfg.env_name, cfg.seed, gamma=cfg.gamma
             )
             bias_history.append({"step": collector.steps, **metrics})
-            evaluator.writer.add_scalar("bias/value", metrics["bias"], collector.steps)
-            evaluator.writer.add_scalar("bias/q_mean", metrics["q_mean"], collector.steps)
-            evaluator.writer.add_scalar("bias/mc_mean", metrics["mc_mean"], collector.steps)
-            pbar.set_postfix(bias=f"{metrics['bias']:.1f}")
+            log_bias(evaluator, metrics, collector.steps)
+            pbar.set_postfix(bias=f"{metrics['bias_valid']:.1f}")
+            next_bias_step = (collector.steps // BIAS_INTERVAL + 1) * BIAS_INTERVAL
 
         if result := evaluator.run_if_needed(collector.steps, actor):
             pbar.set_description(
@@ -226,5 +231,6 @@ def run_td3(cfg: TD3Config, run_name: str) -> Evaluator:
             )
 
     pbar.close()
+    evaluator.writer.flush()
     evaluator.bias_history = bias_history
     return evaluator

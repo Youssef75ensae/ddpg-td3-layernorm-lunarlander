@@ -1,47 +1,69 @@
+import math
+
 import gymnasium as gym
 import numpy as np
 import torch
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def measure_bias(actor, critic, env_name, seed, n_episodes=10, gamma=0.98, trunc_tol=0.02):
+    """Overestimation bias: mean Q(s, pi(s)) minus the Monte-Carlo return."""
+    device = next(critic.parameters()).device
+    margin = math.ceil(math.log(trunc_tol) / math.log(gamma))
 
-
-def measure_bias(actor, critic, env_name, seed, n_episodes=10, gamma=0.98):
-    """Measure overestimation bias using Monte Carlo returns from real trajectories.
-
-    The policy is kept fixed during the measurement. For each episode, we
-    record Q(s_t, a_t) and the discounted return G_t from each timestep t.
-    The bias is mean(Q) - mean(G). A positive value indicates overestimation.
-    """
     env = gym.make(env_name)
-    q_values = []
-    mc_returns = []
+    max_len = env.spec.max_episode_steps or 1000
+    q_values, mc_returns, valid = [], [], []
+    n_truncated = 0
 
     for ep in range(n_episodes):
         obs, _ = env.reset(seed=seed + ep)
-        trajectory = []  # list of (q_value, reward)
+        trajectory = []
         terminated, truncated = False, False
-        steps = 0
 
-        while not (terminated or truncated) and steps < 1000:
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
+        while not (terminated or truncated):
+            obs_tensor = torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
             with torch.no_grad():
-                a_tensor = actor.act(obs_tensor).squeeze(0)
-                q = critic(obs_tensor, a_tensor.unsqueeze(0)).item()
-            a_np = a_tensor.cpu().numpy()
-            next_obs, r, terminated, truncated, _ = env.step(a_np)
-            trajectory.append((q, r))
-            obs = next_obs
-            steps += 1
+                a_tensor = actor.act(obs_tensor)
+                q = critic(obs_tensor, a_tensor).item()
+            obs, r, terminated, truncated, _ = env.step(a_tensor.squeeze(0).cpu().numpy())
+            trajectory.append((q, float(r)))
+            truncated = truncated or len(trajectory) >= max_len  # safety net
 
-        # Compute discounted returns backwards (G_t = r_t + gamma * G_{t+1})
+        cut = truncated and not terminated
+        n_truncated += int(cut)
+
+        # Discounted returns, computed backwards
+        T = len(trajectory)
+        returns = [0.0] * T
         G = 0.0
-        for q, r in reversed(trajectory):
-            G = r + gamma * G
+        for t in reversed(range(T)):
+            G = trajectory[t][1] + gamma * G
+            returns[t] = G
+
+        for t, (q, _) in enumerate(trajectory):
             q_values.append(q)
-            mc_returns.append(G)
+            mc_returns.append(returns[t])
+            valid.append(not cut or T - t >= margin)
 
     env.close()
-    q_mean = float(np.mean(q_values))
-    mc_mean = float(np.mean(mc_returns))
-    return {"q_mean": q_mean, "mc_mean": mc_mean, "bias": q_mean - mc_mean}
+
+    q_all = np.asarray(q_values)
+    g_all = np.asarray(mc_returns)
+    v = np.asarray(valid)
+
+    q_mean = float(q_all.mean())
+    mc_mean = float(g_all.mean())
+    if v.any():
+        bias_valid = float(np.mean(q_all[v] - g_all[v]))
+        bias_norm = bias_valid / (float(np.mean(np.abs(g_all[v]))) + 1e-8)
+    else:
+        bias_valid = bias_norm = float("nan")
+
+    return {
+        "q_mean": q_mean,
+        "mc_mean": mc_mean,
+        "bias": q_mean - mc_mean,
+        "bias_valid": bias_valid,
+        "bias_norm": bias_norm,
+        "frac_truncated": n_truncated / n_episodes,
+    }

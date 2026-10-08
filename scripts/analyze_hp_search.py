@@ -11,7 +11,7 @@ for path in sorted(results_dir.glob("*.json")):
     with open(path) as f:
         d = json.load(f)
     cfg = d["config"]
-    final_rewards = d["history"][-1]["rewards"]
+    final_rewards = [x for h in d["history"][-10:] for x in h["rewards"]]
     data.append({
         "algo": path.name.split("-")[0],
         "tau": cfg["tau"],

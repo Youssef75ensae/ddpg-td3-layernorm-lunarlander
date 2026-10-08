@@ -17,11 +17,11 @@ class DDPGConfig:
     gamma: float = 0.98
 
     # Selected via grid search (see results/hyperparameter_search/)
-    tau: float = 0.005
+    tau: float = 0.05
     action_noise: float = 0.1
 
-    actor_hidden: tuple[int, ...] = (256, 256)
-    critic_hidden: tuple[int, ...] = (256, 256)
+    actor_hidden: tuple[int, ...] = (64, 64)
+    critic_hidden: tuple[int, ...] = (64, 64)
 
     use_layernorm: bool = False
     lr_actor: float = 1e-3
