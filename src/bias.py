@@ -1,9 +1,17 @@
-def measure_bias(actor, critic, env_name, seed, n_episodes=10, gamma=0.98):
-    """Estimate overestimation bias using actual trajectories.
+import gymnasium as gym
+import numpy as np
+import torch
 
-    Runs n_episodes with the deterministic policy. At each step t, records
-    Q(s_t, a_t) and computes the Monte Carlo return G_t from t onwards.
-    Bias = mean(Q) - mean(G).
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def measure_bias(actor, critic, env_name, seed, n_episodes=10, gamma=0.98):
+    """Measure overestimation bias using Monte Carlo returns from real trajectories.
+
+    The policy is kept fixed during the measurement. For each episode, we
+    record Q(s_t, a_t) and the discounted return G_t from each timestep t.
+    The bias is mean(Q) - mean(G). A positive value indicates overestimation.
     """
     env = gym.make(env_name)
     q_values = []
@@ -11,9 +19,10 @@ def measure_bias(actor, critic, env_name, seed, n_episodes=10, gamma=0.98):
 
     for ep in range(n_episodes):
         obs, _ = env.reset(seed=seed + ep)
-        trajectory = []
+        trajectory = []  # list of (q_value, reward)
         terminated, truncated = False, False
         steps = 0
+
         while not (terminated or truncated) and steps < 1000:
             obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)
             with torch.no_grad():
@@ -25,7 +34,7 @@ def measure_bias(actor, critic, env_name, seed, n_episodes=10, gamma=0.98):
             obs = next_obs
             steps += 1
 
-        # Compute discounted returns backward
+        # Compute discounted returns backwards (G_t = r_t + gamma * G_{t+1})
         G = 0.0
         for q, r in reversed(trajectory):
             G = r + gamma * G
