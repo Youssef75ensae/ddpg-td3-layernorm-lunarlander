@@ -4,9 +4,14 @@ __pycache__/
 .ipynb_checkpoints/
 results/raw/*
 !results/raw/.gitkeep
+results/archive/*
+!results/archive/.gitkeep
+results/hyperparameter_search/*
+!results/hyperparameter_search/.gitkeep
 results/figures/*
 !results/figures/.gitkeep
 *.pt
 *.pth
 runs/
 outputs/
+logs/

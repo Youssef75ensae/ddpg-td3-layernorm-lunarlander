@@ -12,6 +12,7 @@ dependencies = [
     "numpy",
     "omegaconf",
     "optuna",
+    "pandas>=3.0.6",
     "pyyaml",
     "rl-mind",
     "scipy",

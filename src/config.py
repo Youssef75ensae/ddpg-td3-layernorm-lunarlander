@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class DDPGConfig:
     env_name: str = "LunarLanderContinuous-v3"
@@ -14,11 +15,14 @@ class DDPGConfig:
     batch_size: int = 64
 
     gamma: float = 0.98
-    tau: float = 0.05
+
+    # Selected via grid search (see results/hyperparameter_search/)
+    tau: float = 0.005
     action_noise: float = 0.1
 
-    actor_hidden: tuple[int, ...] = (64, 64)
-    critic_hidden: tuple[int, ...] = (64, 64)
+    actor_hidden: tuple[int, ...] = (256, 256)
+    critic_hidden: tuple[int, ...] = (256, 256)
+
     use_layernorm: bool = False
     lr_actor: float = 1e-3
     lr_critic: float = 1e-3
@@ -29,6 +33,11 @@ class DDPGConfig:
 
 @dataclass(frozen=True)
 class TD3Config(DDPGConfig):
+    # TD3-specific: selected via grid search (see results/hyperparameter_search/)
+    tau: float = 0.05
+    actor_hidden: tuple[int, ...] = (64, 64)
+    critic_hidden: tuple[int, ...] = (64, 64)
+
     policy_delay: int = 2
     target_noise: float = 0.2
     target_noise_clip: float = 0.5
