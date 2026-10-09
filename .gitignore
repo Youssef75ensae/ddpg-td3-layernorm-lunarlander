@@ -2,14 +2,11 @@ __pycache__/
 *.pyc
 .venv/
 .ipynb_checkpoints/
-results/raw/*
-!results/raw/.gitkeep
+results/raw/
 results/archive/*
 !results/archive/.gitkeep
 results/hyperparameter_search/*
 !results/hyperparameter_search/.gitkeep
-results/figures/*
-!results/figures/.gitkeep
 *.pt
 *.pth
 runs/

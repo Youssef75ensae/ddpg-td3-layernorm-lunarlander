@@ -224,8 +224,10 @@ def curves_figure(g, xkey, ykey, ylabel, title, tests, measure, alpha, baselines
             ax.fill_between(x, lo, hi, color=COLOR[ln], alpha=0.15, lw=0)
         for value, text in baselines:
             ax.axhline(value, color=INK_2, lw=0.8, ls=":")
-            ax.annotate(text, (x[0], value), xytext=(2, 2), textcoords="offset points",
-                        ha="left", va="bottom", fontsize=6.5, color=INK_2)
+            at_end = value < 0
+            ax.annotate(text, (x[-1] if at_end else x[0], value), xytext=(-2 if at_end else 2, 2),
+                        textcoords="offset points", ha="right" if at_end else "left", va="bottom",
+                        fontsize=6.5, color=INK_2)
         p = stepwise_welch(curves[True], curves[False])
         top = ax.get_ylim()[1]
         sig = p < alpha
@@ -234,10 +236,8 @@ def curves_figure(g, xkey, ykey, ylabel, title, tests, measure, alpha, baselines
         ax.set_title(ALGO[algo], color=INK, pad=8)
         ax.set_xlabel("environment steps")
         kilo(ax)
-        leg = ax.legend(frameon=False, loc="center right" if measure == "performance" else "upper right",
-                        bbox_to_anchor=(1.0, 0.38) if measure == "performance" else (1.0, 0.92),
-                        title=f"LN vs no LN: Welch {fmt_p(t['p_bonf'])} (Bonf.)", title_fontsize=7)
-        leg._legend_box.align = "left"
+        ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2,
+                  title=f"LN vs no LN: Welch {fmt_p(t['p'])}, Bonferroni {fmt_p(t['p_bonf'])}", title_fontsize=7)
     axes[0].set_ylabel(ylabel)
     fig.suptitle(title, fontsize=10, color=INK, y=1.13)
     fig.text(0.5, 0.995, f"black dots: steps where LN and no LN differ (Welch's t-test, p < {alpha:g}, uncorrected)",
@@ -248,7 +248,7 @@ def curves_figure(g, xkey, ykey, ylabel, title, tests, measure, alpha, baselines
 def profiles_and_scatter(runs, g, corr, random_mean, n_boot, rng):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.0, 3.6))
     perfs = np.array([r["perf"] for r in runs])
-    taus = np.linspace(min(perfs.min(), random_mean) - 5, perfs.max() + 5, 300)
+    taus = np.linspace(perfs.min() - 10, perfs.max() + 10, 300)
     for algo, ln in CONFIGS:
         x = np.array([r["perf"] for r in g[(algo, ln)]])
         prof = (x[None, :] > taus[:, None]).mean(axis=1)
@@ -258,15 +258,13 @@ def profiles_and_scatter(runs, g, corr, random_mean, n_boot, rng):
         ax1.step(taus, prof, where="post", color=COLOR[ln], ls=LINESTYLE[algo], label=name(algo, ln))
         ax1.fill_between(taus, lo, hi, step="post", color=COLOR[ln], alpha=0.12, lw=0)
     ax1.axhline(0.5, color=INK_2, lw=0.7, ls=":")
-    ax1.axvline(random_mean, color=INK_2, lw=0.8, ls=":")
-    ax1.annotate("random policy", (random_mean, 0.02), xytext=(3, 0), textcoords="offset points", fontsize=6.5, color=INK_2)
     ax1.axvline(SOLVED, color=INK_2, lw=0.8, ls=":")
-    ax1.annotate("solved", (SOLVED, 0.02), xytext=(3, 0), textcoords="offset points", fontsize=6.5, color=INK_2)
+    ax1.annotate("solved", (SOLVED, 1.0), xytext=(3, -2), textcoords="offset points", va="top", fontsize=6.5, color=INK_2)
     ax1.set_xlabel("final performance threshold τ (return)")
     ax1.set_ylabel("fraction of runs with performance > τ")
     ax1.set_ylim(-0.02, 1.02)
     ax1.set_title("(a) Performance profiles", color=INK)
-    ax1.legend(frameon=False, loc="lower left", bbox_to_anchor=(0.0, 0.08))
+    ax1.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2)
     rho = {c["group"]: c for c in corr}
     for algo, ln in CONFIGS:
         rs = g[(algo, ln)]
@@ -278,7 +276,7 @@ def profiles_and_scatter(runs, g, corr, random_mean, n_boot, rng):
     ax2.axvline(0, color=INK_2, lw=0.8, ls=":")
     ax2.set_xlabel("overestimation bias Q − G (mean over steps ≥ 100k)")
     ax2.set_ylabel("final performance (return)")
-    ax2.set_title(f"(b) Bias vs performance (pooled ρ = {pooled['rho']:.2f})", color=INK)
+    ax2.set_title(f"(b) Bias vs performance\npooled ρ = {pooled['rho']:.2f} (Bonferroni {fmt_p(pooled['p_bonf'])})", color=INK)
     ax2.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, handletextpad=0.3,
                columnspacing=0.8, title="Spearman ρ within each configuration", title_fontsize=7)
     fig.suptitle("Distribution of final performance, and its relation to the bias", fontsize=10, color=INK)
@@ -305,12 +303,12 @@ def sensitivity_figure(grid_runs):
         ax.set_title(ALGO[algo], color=INK)
         sel = [r["perf"] for r in grid_runs if r["algo"] == algo and r["hidden"] == 64 and r["tau"] == 0.05]
         if sel:
-            ax.plot([0.05], [np.mean(sel)], marker="*", ms=11, color=INK, ls="none", zorder=5)
-            ax.annotate("selected", (0.05, np.mean(sel)), xytext=(-8, -12), textcoords="offset points",
-                        ha="right", fontsize=6.5, color=INK_2)
-        if algo == "ddpg":
-            ax.legend(frameon=False, loc="upper left", title="hidden layers (dots = individual seeds)", title_fontsize=7)
+            ax.plot([0.05], [np.mean(sel)], marker="*", ms=11, color=INK, ls="none", zorder=5,
+                    label="selected (τ = 0.05, 64×64)")
     axes[0].set_ylabel("final performance (return)")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, -0.02), ncol=3, frameon=False,
+               title="hidden layers (dots = individual seeds)", title_fontsize=7)
     fig.suptitle("Hyper-parameter sensitivity (grid search, 3 seeds per point, no LN)", fontsize=10, color=INK, y=1.05)
     return fig
 
@@ -371,14 +369,14 @@ Checklist: 1 title in figure / 2 caption with conclusion / 3 axes labelled with 
 Checklist: 1 title / 2 caption with conclusion / 3 axes / 4 variability = 10th-90th percentile interval / 5 no colour intensity / 6 tests in caption and dots / 7 number / 8 cite.
 
 ## Figure 3 - Performance profiles and bias vs performance
-**Caption.** (a) Performance profiles: fraction of runs whose final performance exceeds a threshold τ, for each configuration (n = {n} runs each); shaded bands are 95% bootstrap confidence intervals; dotted lines mark the random policy ({random_mean:.0f}) and the "solved" threshold (200). A profile that lies above another indicates better performance across the whole distribution. (b) Final performance against the overestimation bias of each run (circles: DDPG, triangles: TD3; blue: no LN, orange: LN). Spearman rank correlations, Bonferroni-corrected over 5 tests: {within}; pooled over the {pooled['n']} runs: ρ = {pooled['rho']:.2f} ({fmt_p(pooled['p_bonf'])}); the pooled value can be driven by the differences between configurations rather than by a within-configuration link. TD3 vs DDPG without LN: bias {res('no LN: TD3 vs DDPG', 'bias')}; performance {res('no LN: TD3 vs DDPG', 'performance')}{'' if matched else ' (DDPG and TD3 use different hyper-parameters, so this comparison is descriptive)'}. [TO WRITE: what should be retained]
+**Caption.** (a) Performance profiles: fraction of runs whose final performance exceeds a threshold τ, for each configuration (n = {n} runs each); shaded bands are 95% bootstrap confidence intervals; the dotted line marks the "solved" threshold (200); the random policy scores {random_mean:.0f} (Fig. 1). A profile that lies above another indicates better performance across the whole distribution. (b) Final performance against the overestimation bias of each run (circles: DDPG, triangles: TD3; blue: no LN, orange: LN). Spearman rank correlations, Bonferroni-corrected over 5 tests: {within}; pooled over the {pooled['n']} runs: ρ = {pooled['rho']:.2f} ({fmt_p(pooled['p_bonf'])}); the pooled value can be driven by the differences between configurations rather than by a within-configuration link. TD3 vs DDPG without LN: bias {res('no LN: TD3 vs DDPG', 'bias')}; performance {res('no LN: TD3 vs DDPG', 'performance')}{'' if matched else ' (DDPG and TD3 use different hyper-parameters, so this comparison is descriptive)'}. [TO WRITE: what should be retained]
 
 Checklist: 1 titles / 2 caption with conclusion / 3 axes / 4 variability = bootstrap band in (a), every run shown in (b) / 5 no colour intensity / 6 tests in caption / 7 number / 8 cite.
 """
     if grid_ok:
         out += """
 ## Figure 4 - Hyper-parameter sensitivity (grid search)
-**Caption.** Final performance (mean of the last 10 evaluations) as a function of the Polyak coefficient τ, for two network sizes, without LayerNorm; 3 seeds per point, all shown as dots (fewer than 10 runs), lines join the means. No hyper-parameter effect is statistically detectable at 3 seeds (Kruskal-Wallis on τ: DDPG p = 0.24, TD3 p = 0.06); τ = 0.05 with 64×64 networks was selected for both algorithms. As τ = 0.05 lies at the edge of the tested range, the best value may be larger. [TO WRITE: what should be retained]
+**Caption.** Final performance (mean of the last 10 evaluations) as a function of the Polyak coefficient τ, for two network sizes, without LayerNorm; 3 seeds per point, all shown as dots (fewer than 10 runs), lines join the means. No hyper-parameter effect is statistically detectable at 3 seeds (Kruskal-Wallis on τ: DDPG p = 0.24, TD3 p = 0.06); τ = 0.05 with 64×64 networks (star) was selected for both algorithms. As τ = 0.05 lies at the edge of the tested range, the best value may be larger. [TO WRITE: what should be retained]
 
 Checklist: 1 title / 2 caption with conclusion / 3 axes (log scale stated) / 4 every run shown / 5 no colour intensity / 6 tests in caption / 7 number / 8 cite.
 """
